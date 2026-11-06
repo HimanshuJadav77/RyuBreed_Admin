@@ -250,6 +250,29 @@
     RyuBreed Academia &copy; <%= new Date().getFullYear() %> • Authoritative Subscription Administration Engine
   </footer>
 
+  <script>
+    const planForm = document.querySelector('form');
+    if (planForm) {
+      let isSubmitting = false;
+      planForm.addEventListener('submit', async function(e) {
+        if (isSubmitting) return;
+        e.preventDefault();
+        isSubmitting = true;
+        try {
+          const csrfResp = await fetch('/auth/csrf-token');
+          const csrfData = await csrfResp.json();
+          if (csrfData.csrfToken) {
+            const csrfInput = document.querySelector('input[name="_csrf"]');
+            if (csrfInput) csrfInput.value = csrfData.csrfToken;
+          }
+        } catch (err) {
+          // Fall back to existing token
+        }
+        planForm.submit();
+      });
+    }
+  </script>
+
 </body>
 </html>
 
