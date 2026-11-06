@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login — RyuBreed Academia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+  </style>
+  <!-- Firebase Web SDK (v10.12.0 Compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 antialiased selection:bg-indigo-500 selection:text-white">
+  <div class="bg-slate-900/80 border border-slate-800 max-w-md w-full rounded-2xl p-8 shadow-2xl backdrop-blur-sm">
+    <!-- Brand Header -->
+    <div class="flex items-center space-x-3 mb-6">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
+        R
+      </div>
+      <div>
+        <h1 class="text-base font-semibold text-white tracking-tight">RyuBreed Academia</h1>
+        <p class="text-xs text-slate-400">Administrator Management Portal</p>
+      </div>
+    </div>
+
+    <!-- Server-Side Error Alert -->
+    <% if (error) { %>
+      <div id="serverErrorAlert" class="bg-rose-950/60 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+        <span><%= error %></span>
+      </div>
+    <% } %>
+
+    <!-- Client-Side Error Alert -->
+    <div id="clientErrorAlert" class="hidden bg-rose-950/60 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl mb-4 flex items-center gap-2">
+      <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+      <span id="clientErrorText"></span>
+    </div>
+
+    <!-- Admin Email/Password Login Form -->
+    <form id="loginForm" action="/auth/login" method="POST" class="space-y-4" novalidate>
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>" id="csrfToken">
+      <input type="hidden" name="idToken" id="idToken">
+
+
+      <!-- Email Field -->
+      <div>
+        <label for="email" class="block text-xs font-semibold text-slate-300 mb-1">
+          Administrator Email
+        </label>
+        <div class="relative">
+          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500 text-xs">
+            <i class="fa-solid fa-envelope"></i>
+          </span>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            autocomplete="username"
+            placeholder="admin@ryubreed.com"
+            required
+            class="bg-slate-950 border border-slate-800 text-xs rounded-xl pl-9 pr-3 py-3 w-full focus:outline-none focus:border-indigo-500 text-slate-200 transition-colors placeholder:text-slate-600"
+          >
+        </div>
+      </div>
+
+      <!-- Password Field -->
+      <div>
+        <label for="password" class="block text-xs font-semibold text-slate-300 mb-1">
+          Password
+        </label>
+        <div class="relative">
+          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500 text-xs">
+            <i class="fa-solid fa-lock"></i>
+          </span>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            placeholder="••••••••"
+            required
+            class="bg-slate-950 border border-slate-800 text-xs rounded-xl pl-9 pr-10 py-3 w-full focus:outline-none focus:border-indigo-500 text-slate-200 transition-colors placeholder:text-slate-600"
+          >
+          <button
+            type="button"
+            id="togglePasswordBtn"
+            aria-label="Toggle password visibility"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            <i id="togglePasswordIcon" class="fa-solid fa-eye text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <button
+        type="submit"
+        id="submitBtn"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-3 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+      >
+        <i id="btnSpinner" class="fa-solid fa-circle-notch fa-spin hidden text-xs"></i>
+        <span id="btnText">Sign In as Administrator</span>
+      </button>
+
+      <!-- Security Notice -->
+      <div class="pt-2 text-center">
+        <p class="text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-shield-halved text-indigo-400"></i>
+          <span>Protected by Firebase Identity Platform &amp; Session Hardening</span>
+        </p>
+      </div>
+    </form>
+  </div>
+
+  <!-- Server-injected Firebase configuration payload -->
+  <script type="application/json" id="firebaseConfigData">
+    <%- JSON.stringify(locals.firebaseConfig || {}) %>
+  </script>
+
+  <script>
+    // Configuration parsed safely from application/json payload
+    const firebaseConfig = JSON.parse(document.getElementById('firebaseConfigData')?.textContent || '{}');
+
+    const form = document.getElementById('loginForm');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const idTokenInput = document.getElementById('idToken');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const clientErrorAlert = document.getElementById('clientErrorAlert');
+    const clientErrorText = document.getElementById('clientErrorText');
+    const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+    const togglePasswordIcon = document.getElementById('togglePasswordIcon');
+
+    // Password visibility toggle
+    togglePasswordBtn.addEventListener('click', () => {
+      const isPassword = passwordInput.type === 'password';
+      passwordInput.type = isPassword ? 'text' : 'password';
+      togglePasswordIcon.className = isPassword ? 'fa-solid fa-eye-slash text-xs' : 'fa-solid fa-eye text-xs';
+    });
+
+    function showError(message) {
+      clientErrorText.textContent = message;
+      clientErrorAlert.classList.remove('hidden');
+      const serverAlert = document.getElementById('serverErrorAlert');
+      if (serverAlert) serverAlert.classList.add('hidden');
+    }
+
+    function hideErrors() {
+      clientErrorAlert.classList.add('hidden');
+      const serverAlert = document.getElementById('serverErrorAlert');
+      if (serverAlert) serverAlert.classList.add('hidden');
+    }
+
+    function setLoading(isLoading) {
+      submitBtn.disabled = isLoading;
+      if (isLoading) {
+        btnSpinner.classList.remove('hidden');
+        btnText.textContent = 'Verifying Credentials...';
+      } else {
+        btnSpinner.classList.add('hidden');
+        btnText.textContent = 'Sign In as Administrator';
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideErrors();
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!email || !password) {
+        showError('Please enter both your email address and password.');
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        if (!firebaseConfig.apiKey) {
+          throw new Error('Firebase client configuration is unavailable. Please check system configuration.');
+        }
+
+        // Initialize Firebase Web App if not yet initialized
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+
+        const auth = firebase.auth();
+        // Clear persistence so client browser memory/storage does not retain credentials
+        await auth.setPersistence(firebase.auth.Auth.Persistence.NONE);
+
+        // 1. Authenticate with Firebase Email/Password
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+
+        // 2. Automatically retrieve fresh Firebase ID token
+        const idToken = await userCredential.user.getIdToken(true);
+
+        // 3. Clear unnecessary client-side auth state after obtaining token
+        await auth.signOut();
+
+        // 4. Ensure CSRF token is fresh and synchronized with active server session (survives dev restarts)
+        try {
+          const csrfResp = await fetch('/auth/csrf-token');
+          if (csrfResp.ok) {
+            const csrfData = await csrfResp.json();
+            if (csrfData && csrfData.csrfToken) {
+              const csrfInput = document.getElementById('csrfToken');
+              if (csrfInput) csrfInput.value = csrfData.csrfToken;
+            }
+          }
+        } catch (_) {}
+
+        // 5. Inject ID token into hidden input and submit form to Express backend
+        idTokenInput.value = idToken;
+        HTMLFormElement.prototype.submit.call(form);
+      } catch (err) {
+        setLoading(false);
+        let message = 'Authentication failed. Please verify your credentials.';
+
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+          message = 'Invalid email address or password. Please try again.';
+        } else if (err.code === 'auth/user-disabled') {
+          message = 'This administrator account has been disabled.';
+        } else if (err.code === 'auth/too-many-requests') {
+          message = 'Too many failed login attempts. Access is temporarily restricted. Please try again later.';
+        } else if (err.code === 'auth/network-request-failed') {
+          message = 'Network error: Unable to connect to Firebase Authentication service.';
+        } else if (err.message) {
+          message = err.message;
+        }
+
+        showError(message);
+      }
+    });
+  </script>
+</body>
+</html>
