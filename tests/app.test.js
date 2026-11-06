@@ -127,12 +127,28 @@ test('CSRF rejection: POST /subscriptions/revoke without CSRF token is rejected 
   }
 });
 
+test('CSRF rejection: POST /plans/update without CSRF token is rejected with 403 Forbidden', async () => {
+  const server = app.listen(0);
+  const port = server.address().port;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/plans/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'corePrice=1&smartPrice=2',
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    server.close();
+  }
+});
+
 // 2. Unauthorized access rejection to every protected admin route
 const protectedRoutes = [
   { method: 'GET', path: '/' },
   { method: 'GET', path: '/institutes' },
   { method: 'GET', path: '/subscriptions' },
   { method: 'GET', path: '/audit' },
+  { method: 'GET', path: '/plans' },
 ];
 
 for (const route of protectedRoutes) {

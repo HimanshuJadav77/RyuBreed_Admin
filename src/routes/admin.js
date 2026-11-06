@@ -10,10 +10,12 @@ router.get('/', AdminController.getDashboard);
 router.get('/institutes', AdminController.getInstitutes);
 router.get('/subscriptions', AdminController.getSubscriptions);
 router.get('/audit', AdminController.getAuditLogs);
+router.get('/plans', AdminController.getPlans);
 
 // Subscription mutation actions -> Handed off to Worker API / Firebase Admin
 router.post('/trials/grant', AdminController.grantTrial);
 router.post('/plans/activate', AdminController.activatePlan);
+router.post('/plans/update', AdminController.updatePlans);
 router.post('/subscriptions/extend', AdminController.extendSubscription);
 router.post('/subscriptions/revoke', AdminController.revokeSubscription);
 

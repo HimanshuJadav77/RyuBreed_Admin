@@ -89,5 +89,13 @@ export class WorkerApiClient {
     if (idempotencyKey) body.idempotencyKey = idempotencyKey;
     return this.callWorker('/admin/subscriptions/revoke', 'POST', body, token);
   }
+
+  async getPlans(token) {
+    return this.callWorker('/admin/plans', 'GET', null, token);
+  }
+
+  async updatePlans(plans, token) {
+    return this.callWorker('/admin/plans', 'PUT', { plans }, token);
+  }
 }
 

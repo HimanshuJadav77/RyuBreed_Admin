@@ -496,4 +496,152 @@ export class AdminController {
       res.redirect(`/institutes?error=${encodeURIComponent(e.message)}`);
     }
   }
+
+  static async getPlans(req, res) {
+    try {
+      let plans = [
+        {
+          id: 'core99',
+          name: 'Core Plan',
+          priceINR: 99,
+          annualPriceINR: 948,
+          durationDays: 30,
+          features: [
+            'Up to 150 Students',
+            'Up to 10 Batches',
+            'Up to 5 Staff Members',
+            'Attendance & Fee Tracking',
+            'Cloud Sync & Multi-Device Access',
+            'Basic PDF Receipts'
+          ]
+        },
+        {
+          id: 'smart199',
+          name: 'Smart Plan',
+          priceINR: 199,
+          annualPriceINR: 1908,
+          durationDays: 30,
+          features: [
+            'Unlimited Students, Batches & Staff',
+            'Full Academics Hub (Homework & Tests)',
+            'Study Materials & Lesson Plans',
+            'Automated WhatsApp Reports & Queue',
+            'Graphical Performance PDF Reports',
+            'Student ID Cards & Merit Certificates'
+          ]
+        }
+      ];
+
+      try {
+        const resp = await workerClient.getPlans();
+        if (resp && resp.success && Array.isArray(resp.plans)) {
+          plans = resp.plans;
+        }
+      } catch {
+        if (hasDirectFirestoreAccess()) {
+          const db = getFirestore();
+          const doc = await db.doc('system_config/plans').get();
+          if (doc.exists && Array.isArray(doc.data().plans)) {
+            plans = doc.data().plans;
+          }
+        }
+      }
+
+      return res.render('plans', {
+        title: 'Subscription Plans Management',
+        plans,
+        user: req.session.adminUser,
+        csrfToken: req.csrfToken ? req.csrfToken() : '',
+        success: req.query.success,
+        error: req.query.error,
+      });
+    } catch (e) {
+      return res.render('plans', {
+        title: 'Subscription Plans Management',
+        plans: [],
+        user: req.session.adminUser,
+        csrfToken: req.csrfToken ? req.csrfToken() : '',
+        error: e.message,
+      });
+    }
+  }
+
+  static async updatePlans(req, res) {
+    try {
+      const {
+        corePrice, coreAnnualPrice, coreName,
+        smartPrice, smartAnnualPrice, smartName,
+      } = req.body;
+
+      const pCore = Number(corePrice);
+      const pCoreAnnual = Number(coreAnnualPrice);
+      const pSmart = Number(smartPrice);
+      const pSmartAnnual = Number(smartAnnualPrice);
+
+      if (isNaN(pCore) || pCore < 1) {
+        return res.redirect('/plans?error=Core+plan+monthly+price+must+be+at+least+Rs+1');
+      }
+      if (isNaN(pSmart) || pSmart < 1) {
+        return res.redirect('/plans?error=Smart+plan+monthly+price+must+be+at+least+Rs+1');
+      }
+
+      const updatedPlans = [
+        {
+          id: 'core99',
+          name: coreName?.trim() || 'Core Plan',
+          priceINR: Math.round(pCore),
+          annualPriceINR: isNaN(pCoreAnnual) || pCoreAnnual < 1 ? Math.round(pCore * 12) : Math.round(pCoreAnnual),
+          durationDays: 30,
+          features: [
+            'Up to 150 Students',
+            'Up to 10 Batches',
+            'Up to 5 Staff Members',
+            'Attendance & Fee Tracking',
+            'Cloud Sync & Multi-Device Access',
+            'Basic PDF Receipts'
+          ]
+        },
+        {
+          id: 'smart199',
+          name: smartName?.trim() || 'Smart Plan',
+          priceINR: Math.round(pSmart),
+          annualPriceINR: isNaN(pSmartAnnual) || pSmartAnnual < 1 ? Math.round(pSmart * 12) : Math.round(pSmartAnnual),
+          durationDays: 30,
+          features: [
+            'Unlimited Students, Batches & Staff',
+            'Full Academics Hub (Homework & Tests)',
+            'Study Materials & Lesson Plans',
+            'Automated WhatsApp Reports & Queue',
+            'Graphical Performance PDF Reports',
+            'Student ID Cards & Merit Certificates'
+          ]
+        }
+      ];
+
+      try {
+        await workerClient.updatePlans(updatedPlans);
+        return res.redirect('/plans?success=Plans+updated+successfully!+New+prices+are+now+live+in+Flutter+and+Razorpay.');
+      } catch (workerErr) {
+        if (hasDirectFirestoreAccess()) {
+          const db = getFirestore();
+          const adminUid = req.session?.adminUser?.uid || 'admin';
+          await db.doc('system_config/plans').set({
+            plans: updatedPlans,
+            updatedAt: new Date().toISOString(),
+            updatedBy: adminUid,
+          });
+          await db.collection('subscription_audit_logs').add({
+            action: 'PLANS_UPDATED',
+            adminUid,
+            plans: updatedPlans,
+            timestamp: new Date().toISOString(),
+          });
+          return res.redirect('/plans?success=Plans+updated+successfully!+New+prices+are+now+live+in+Flutter+and+Razorpay.');
+        }
+        throw workerErr;
+      }
+    } catch (e) {
+      return res.redirect(`/plans?error=${encodeURIComponent(e.message)}`);
+    }
+  }
 }
