@@ -16,29 +16,27 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 antialiased selection:bg-indigo-500 selection:text-white">
-  <div class="bg-slate-900/80 border border-slate-800 max-w-md w-full rounded-2xl p-8 shadow-2xl backdrop-blur-sm">
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex items-center justify-center p-4 antialiased selection:bg-indigo-500/20 selection:text-indigo-200">
+  <div class="bg-zinc-900/60 border border-zinc-800/80 max-w-sm w-full rounded-xl p-6 shadow-2xl backdrop-blur-sm space-y-5">
     <!-- Brand Header -->
-    <div class="flex items-center space-x-3 mb-6">
-      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-600 font-bold text-white text-xl tracking-tight shadow-lg shadow-indigo-600/20 mb-3">
         R
       </div>
-      <div>
-        <h1 class="text-base font-semibold text-white tracking-tight">RyuBreed Academia</h1>
-        <p class="text-xs text-slate-400">Administrator Management Portal</p>
-      </div>
+      <h1 class="text-lg font-semibold text-zinc-100 tracking-tight">RyuBreed Academia</h1>
+      <p class="text-xs text-zinc-500 font-mono mt-0.5">Admin Login • Management Console</p>
     </div>
 
     <!-- Server-Side Error Alert -->
     <% if (error) { %>
-      <div id="serverErrorAlert" class="bg-rose-950/60 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl mb-4 flex items-center gap-2">
+      <div id="serverErrorAlert" class="bg-red-950/40 border border-red-800/60 text-red-300 text-xs p-3 rounded-lg mb-4 flex items-center gap-2">
         <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
         <span><%= error %></span>
       </div>
     <% } %>
 
     <!-- Client-Side Error Alert -->
-    <div id="clientErrorAlert" class="hidden bg-rose-950/60 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl mb-4 flex items-center gap-2">
+    <div id="clientErrorAlert" class="hidden bg-red-950/40 border border-red-800/60 text-red-300 text-xs p-3 rounded-lg mb-4 flex items-center gap-2">
       <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
       <span id="clientErrorText"></span>
     </div>
@@ -48,14 +46,13 @@
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>" id="csrfToken">
       <input type="hidden" name="idToken" id="idToken">
 
-
       <!-- Email Field -->
       <div>
-        <label for="email" class="block text-xs font-semibold text-slate-300 mb-1">
+        <label for="email" class="block text-xs font-medium text-zinc-300 mb-1">
           Administrator Email
         </label>
         <div class="relative">
-          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500 text-xs">
+          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-500 text-xs">
             <i class="fa-solid fa-envelope"></i>
           </span>
           <input
@@ -65,18 +62,18 @@
             autocomplete="username"
             placeholder="admin@ryubreed.com"
             required
-            class="bg-slate-950 border border-slate-800 text-xs rounded-xl pl-9 pr-3 py-3 w-full focus:outline-none focus:border-indigo-500 text-slate-200 transition-colors placeholder:text-slate-600"
+            class="bg-zinc-950 border border-zinc-800 text-xs rounded-lg pl-9 pr-3 py-2 w-full focus:outline-none focus:border-indigo-500 text-zinc-200 transition-colors placeholder:text-zinc-600"
           >
         </div>
       </div>
 
       <!-- Password Field -->
       <div>
-        <label for="password" class="block text-xs font-semibold text-slate-300 mb-1">
+        <label for="password" class="block text-xs font-medium text-zinc-300 mb-1">
           Password
         </label>
         <div class="relative">
-          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500 text-xs">
+          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-500 text-xs">
             <i class="fa-solid fa-lock"></i>
           </span>
           <input
@@ -84,15 +81,15 @@
             id="password"
             name="password"
             autocomplete="current-password"
-            placeholder="••••••••"
+            placeholder="••••••••••••"
             required
-            class="bg-slate-950 border border-slate-800 text-xs rounded-xl pl-9 pr-10 py-3 w-full focus:outline-none focus:border-indigo-500 text-slate-200 transition-colors placeholder:text-slate-600"
+            class="bg-zinc-950 border border-zinc-800 text-xs rounded-lg pl-9 pr-10 py-2 w-full focus:outline-none focus:border-indigo-500 text-zinc-200 transition-colors placeholder:text-zinc-600"
           >
           <button
             type="button"
             id="togglePasswordBtn"
             aria-label="Toggle password visibility"
-            class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 transition-colors"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-500 hover:text-zinc-300 transition-colors"
           >
             <i id="togglePasswordIcon" class="fa-solid fa-eye text-xs"></i>
           </button>
@@ -103,17 +100,17 @@
       <button
         type="submit"
         id="submitBtn"
-        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-3 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs py-2 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
       >
         <i id="btnSpinner" class="fa-solid fa-circle-notch fa-spin hidden text-xs"></i>
         <span id="btnText">Sign In as Administrator</span>
       </button>
 
       <!-- Security Notice -->
-      <div class="pt-2 text-center">
-        <p class="text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
+      <div class="pt-3 border-t border-zinc-800/60 text-center">
+        <p class="text-[11px] text-zinc-500 flex items-center justify-center gap-1.5">
           <i class="fa-solid fa-shield-halved text-indigo-400"></i>
-          <span>Protected by Firebase Identity Platform &amp; Session Hardening</span>
+          <span>Dynamic Administrative Authorization Enforced</span>
         </p>
       </div>
     </form>

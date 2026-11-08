@@ -55,13 +55,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Static assets for React Vite build & legacy assets
 app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '../public/dist'), { index: false }));
+app.use('/assets', express.static(path.join(__dirname, '../public/dist/assets')));
 
 // Public health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'ryubreed-admin-dashboard' });
 });
 
+// Client session check for React SPA
+app.get('/api/session', (req, res) => {
+  res.json({
+    authenticated: Boolean(req.session?.adminUser),
+    user: req.session?.adminUser || null,
+    csrfToken: req.csrfToken ? req.csrfToken() : req.session?.csrfToken || '',
+    firebaseConfig: res.locals.firebaseConfig,
+  });
+});
+
+// React SPA routes
+app.get(['/console', '/app'], (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/dist/index.html'));
+});
+
+app.use('/api', adminRoutes);
 app.use('/auth', authRoutes);
 app.use('/', adminRoutes);
 

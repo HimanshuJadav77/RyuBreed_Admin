@@ -10,7 +10,7 @@ import { getFirestore } from '../config/firebase.js';
  * @param {object|null} db - Optional Firestore instance (for testing/dependency injection)
  * @returns {Promise<{ authorized: boolean, role?: string, method?: string, reason?: string }>}
  */
-export async function verifyAdminAuthorization(uid, db = null) {
+export async function verifyAdminAuthorization(uid, db = null, email = null) {
   if (!uid || typeof uid !== 'string') {
     return { authorized: false, reason: 'Invalid or missing user identity' };
   }
@@ -26,6 +26,17 @@ export async function verifyAdminAuthorization(uid, db = null) {
     return { authorized: true, role: 'admin', method: 'admin_id' };
   }
 
+  // 2. Designated Admin Emails from environment (comma-separated list)
+  const configuredAdminEmails = (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (email && typeof email === 'string' && configuredAdminEmails.includes(email.trim().toLowerCase())) {
+    return { authorized: true, role: 'admin', method: 'admin_email' };
+  }
+
+  // 3. Active administrator record in Cloud Firestore: admin_users/{uid}
   try {
     const firestore = db || getFirestore();
     const adminDoc = await firestore.collection('admin_users').doc(uid.trim()).get();
@@ -42,17 +53,23 @@ export async function verifyAdminAuthorization(uid, db = null) {
 
 export async function requireAdminSession(req, res, next) {
   if (!req.session || !req.session.adminUser) {
+    if (req.xhr || req.headers?.accept?.includes('application/json') || req.baseUrl?.startsWith('/api') || req.path?.startsWith('/api')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     return res.redirect('/auth/login');
   }
 
-  const { uid } = req.session.adminUser;
-  const authResult = await verifyAdminAuthorization(uid, req.db);
+  const { uid, email } = req.session.adminUser;
+  const authResult = await verifyAdminAuthorization(uid, req.db, email);
 
   if (authResult.authorized) {
     return next();
   }
 
   const renderDenied = () => {
+    if (req.xhr || req.headers?.accept?.includes('application/json') || req.baseUrl?.startsWith('/api') || req.path?.startsWith('/api')) {
+      return res.status(403).json({ error: 'Access denied: You do not have administrator permissions.' });
+    }
     res.status(403).render('login', {
       error: 'Access denied: You do not have administrator permissions.',
     });

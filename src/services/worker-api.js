@@ -1,8 +1,16 @@
 import { getAuth } from '../config/firebase.js';
 
 export class WorkerApiClient {
-  constructor() {
-    this.baseUrl = (process.env.WORKER_API_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
+  constructor(baseUrl = null) {
+    this._customBaseUrl = baseUrl;
+  }
+
+  get baseUrl() {
+    return this._customBaseUrl || (process.env.WORKER_API_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
+  }
+
+  set baseUrl(val) {
+    this._customBaseUrl = val;
   }
 
   async getAdminBearerToken(adminUid) {
@@ -31,11 +39,16 @@ export class WorkerApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : null,
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : null,
+      });
+    } catch (netErr) {
+      throw new Error(`Worker service unreachable at ${this.baseUrl}. Ensure the Cloudflare Worker is running (npm start in cloudflare-worker). Details: ${netErr.message}`);
+    }
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -76,6 +89,12 @@ export class WorkerApiClient {
     const body = { instituteId, durationDays, reason };
     if (idempotencyKey) body.idempotencyKey = idempotencyKey;
     return this.callWorker('/admin/trials/grant', 'POST', body, token);
+  }
+
+  async activatePlan(instituteId, planTier, durationMonths, reason, token, idempotencyKey) {
+    const body = { instituteId, planTier, durationMonths, reason };
+    if (idempotencyKey) body.idempotencyKey = idempotencyKey;
+    return this.callWorker('/admin/subscriptions/activate', 'POST', body, token);
   }
 
   async extendSubscription(subscriptionId, days, reason, token, idempotencyKey) {

@@ -36,8 +36,11 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     const decoded = await auth.verifyIdToken(idToken.trim(), false);
 
     // Verify administrator authorization BEFORE creating an authenticated session
-    const authResult = await verifyAdminAuthorization(decoded.uid, req.db);
+    const authResult = await verifyAdminAuthorization(decoded.uid, req.db, decoded.email);
     if (!authResult.authorized) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(403).json({ success: false, error: 'Access denied: You do not have administrator permissions.' });
+      }
       return res.status(403).render('login', {
         error: 'Access denied: You do not have administrator permissions.',
       });
@@ -65,9 +68,15 @@ router.post('/login', loginRateLimiter, async (req, res) => {
 
       req.session.save((saveErr) => {
         if (saveErr) {
+          if (req.xhr || req.headers.accept?.includes('application/json')) {
+            return res.status(500).json({ success: false, error: 'Failed to save session' });
+          }
           return res.status(500).render('login', {
             error: 'Failed to save session',
           });
+        }
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.json({ success: true, user: req.session.adminUser });
         }
         res.redirect('/');
       });
@@ -86,6 +95,9 @@ router.post('/login', loginRateLimiter, async (req, res) => {
       errorMessage = `Authentication failed: ${err.message}`;
     }
 
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(401).json({ success: false, error: errorMessage });
+    }
     res.status(401).render('login', { error: errorMessage });
   }
 });

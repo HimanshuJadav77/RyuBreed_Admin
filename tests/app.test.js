@@ -825,14 +825,14 @@ test('POST /auth/login: authorizes active Firestore admin, regenerates session, 
 });
 
 test('POST /auth/login: cryptographically verifies idToken with checkRevoked=false and authorizes designated admin', async () => {
-  process.env.ADMIN_ID = 'r8gGkQN9nbWcLjIdSJV7zuYYEFC2';
+  process.env.ADMIN_ID = 'ryubreed_admin_master';
   let verifiedWithFalse = false;
   const mockAuth = {
     verifyIdToken: async (token, checkRevoked) => {
       assert.equal(checkRevoked, false, 'verifyIdToken must be called with checkRevoked=false to operate without ADC');
       verifiedWithFalse = true;
       return {
-        uid: 'r8gGkQN9nbWcLjIdSJV7zuYYEFC2',
+        uid: 'ryubreed_admin_master',
         email: 'admin@ryubreed.com',
         auth_time: 1730000000,
       };
@@ -867,9 +867,96 @@ test('POST /auth/login: cryptographically verifies idToken with checkRevoked=fal
       headers: { Cookie: newCookie },
     });
     const checkData = await checkRes.json();
-    assert.equal(checkData.adminUser.uid, 'r8gGkQN9nbWcLjIdSJV7zuYYEFC2');
+    assert.equal(checkData.adminUser.uid, 'ryubreed_admin_master');
   } finally {
     server.close();
+  }
+});
+
+// --------------------------------------------------------------------------
+// REG-IMPL-01: Admin Direct Firestore Mutation Fallback Removal Test
+// --------------------------------------------------------------------------
+test('REG-IMPL-01: AdminController fails closed when Worker is down without falling back to Firestore', async () => {
+  const origWorkerUrl = process.env.WORKER_API_URL;
+  process.env.WORKER_API_URL = 'http://127.0.0.1:59999';
+
+  try {
+    const { AdminController } = await import('../src/controllers/admin-controller.js');
+
+  // 1. grantTrial fails closed
+  {
+    let redirectUrl = '';
+    const mockReq = {
+      body: { instituteId: 'inst_test_failclosed', durationDays: '7', reason: 'Fail-closed test' },
+      session: { adminUser: { uid: 'admin_test' } },
+    };
+    const mockRes = { redirect: (url) => { redirectUrl = url; } };
+    await AdminController.grantTrial(mockReq, mockRes);
+    assert.ok(redirectUrl.includes('error='), `Expected redirect to include error, got ${redirectUrl}`);
+    assert.ok(redirectUrl.includes('Worker'), `Expected error to mention Worker, got ${redirectUrl}`);
+    assert.ok(!redirectUrl.includes('success'), 'grantTrial must NOT succeed via direct Firestore fallback');
+  }
+
+  // 2. activatePlan fails closed
+  {
+    let redirectUrl = '';
+    const mockReq = {
+      body: { instituteId: 'inst_test_failclosed', planTier: 'smart199', durationMonths: '1', reason: 'Fail-closed test' },
+      session: { adminUser: { uid: 'admin_test' } },
+    };
+    const mockRes = { redirect: (url) => { redirectUrl = url; } };
+    await AdminController.activatePlan(mockReq, mockRes);
+    assert.ok(redirectUrl.includes('error='), `Expected redirect to include error, got ${redirectUrl}`);
+    assert.ok(redirectUrl.includes('Worker'), `Expected error to mention Worker, got ${redirectUrl}`);
+    assert.ok(!redirectUrl.includes('success'), 'activatePlan must NOT succeed via direct Firestore fallback');
+  }
+
+  // 3. extendSubscription fails closed
+  {
+    let redirectUrl = '';
+    const mockReq = {
+      body: { subscriptionId: 'sub_test_failclosed', days: '30', reason: 'Fail-closed test' },
+      session: { adminUser: { uid: 'admin_test' } },
+    };
+    const mockRes = { redirect: (url) => { redirectUrl = url; } };
+    await AdminController.extendSubscription(mockReq, mockRes);
+    assert.ok(redirectUrl.includes('error='), `Expected redirect to include error, got ${redirectUrl}`);
+    assert.ok(redirectUrl.includes('Worker'), `Expected error to mention Worker, got ${redirectUrl}`);
+    assert.ok(!redirectUrl.includes('success'), 'extendSubscription must NOT succeed via direct Firestore fallback');
+  }
+
+  // 4. revokeSubscription fails closed
+  {
+    let redirectUrl = '';
+    const mockReq = {
+      body: { instituteId: 'inst_test_failclosed', reason: 'Fail-closed test' },
+      session: { adminUser: { uid: 'admin_test' } },
+    };
+    const mockRes = { redirect: (url) => { redirectUrl = url; } };
+    await AdminController.revokeSubscription(mockReq, mockRes);
+    assert.ok(redirectUrl.includes('error='), `Expected redirect to include error, got ${redirectUrl}`);
+    assert.ok(redirectUrl.includes('Worker'), `Expected error to mention Worker, got ${redirectUrl}`);
+    assert.ok(!redirectUrl.includes('success'), 'revokeSubscription must NOT succeed via direct Firestore fallback');
+  }
+
+  // 5. updatePlans fails closed
+  {
+    let redirectUrl = '';
+    const mockReq = {
+      body: {
+        corePrice: '99', coreAnnualPrice: '948', coreName: 'Core Plan',
+        smartPrice: '199', smartAnnualPrice: '1908', smartName: 'Smart Plan',
+      },
+      session: { adminUser: { uid: 'admin_test' } },
+    };
+    const mockRes = { redirect: (url) => { redirectUrl = url; } };
+    await AdminController.updatePlans(mockReq, mockRes);
+    assert.ok(redirectUrl.includes('error='), `Expected redirect to include error, got ${redirectUrl}`);
+    assert.ok(redirectUrl.includes('Worker'), `Expected error to mention Worker, got ${redirectUrl}`);
+    assert.ok(!redirectUrl.includes('success'), 'updatePlans must NOT succeed via direct Firestore fallback');
+  }
+  } finally {
+    process.env.WORKER_API_URL = origWorkerUrl;
   }
 });
 

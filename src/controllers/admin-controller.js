@@ -9,6 +9,16 @@ function hasDirectFirestoreAccess() {
   );
 }
 
+function isJsonRequest(req) {
+  if (!req) return false;
+  return Boolean(
+    req.xhr ||
+    req.headers?.accept?.includes('application/json') ||
+    req.baseUrl?.startsWith('/api') ||
+    req.path?.startsWith('/api')
+  );
+}
+
 export class AdminController {
   static async getDashboard(req, res) {
     try {
@@ -17,6 +27,20 @@ export class AdminController {
         const resp = await workerClient.getAnalytics();
         if (resp && resp.success && resp.data) {
           const d = resp.data;
+          if (isJsonRequest(req)) {
+            return res.json({
+              success: true,
+              data: {
+                totalUsers: d.totalUsers || 0,
+                totalInstitutes: d.totalInstitutes || 0,
+                activeSubscriptions: d.activeSubscriptions || 0,
+                activeTrials: d.activeTrials || 0,
+                expiredSubscriptions: d.expiredSubscriptions || 0,
+                totalRevenue: d.totalRevenue || 0,
+              },
+              user: req.session.adminUser,
+            });
+          }
           return res.render('dashboard', {
             title: 'Executive Overview',
             totalUsers: d.totalUsers || 0,
@@ -33,6 +57,20 @@ export class AdminController {
       }
 
       if (!hasDirectFirestoreAccess()) {
+        if (isJsonRequest(req)) {
+          return res.json({
+            success: true,
+            data: {
+              totalUsers: 0,
+              totalInstitutes: 0,
+              activeSubscriptions: 0,
+              activeTrials: 0,
+              expiredSubscriptions: 0,
+              totalRevenue: 0,
+            },
+            user: req.session.adminUser,
+          });
+        }
         return res.render('dashboard', {
           title: 'Executive Overview',
           totalUsers: 0,
@@ -50,9 +88,9 @@ export class AdminController {
 
       // Get count of registered Firebase users using Admin SDK
       const usersList = await auth.listUsers(100).catch(() => ({ users: [] }));
-      const institutesSnap = await db.collection('institutes').get().catch(() => ({ size: 0, forEach: () => {} }));
-      const subsSnap = await db.collection('subscriptions').get().catch(() => ({ size: 0, forEach: () => {} }));
-      const paymentsSnap = await db.collection('subscription_payments').get().catch(() => ({ size: 0, forEach: () => {} }));
+      const institutesSnap = await db.collection('institutes').get().catch(() => ({ size: 0, forEach: () => { } }));
+      const subsSnap = await db.collection('subscriptions').get().catch(() => ({ size: 0, forEach: () => { } }));
+      const paymentsSnap = await db.collection('subscription_payments').get().catch(() => ({ size: 0, forEach: () => { } }));
 
       let activeSubs = 0;
       let activeTrials = 0;
@@ -70,6 +108,21 @@ export class AdminController {
         totalRevenue += Number(doc.data()?.amount || 0);
       });
 
+      if (isJsonRequest(req)) {
+        return res.json({
+          success: true,
+          data: {
+            totalUsers: usersList.users.length,
+            totalInstitutes: institutesSnap.size,
+            activeSubscriptions: activeSubs,
+            activeTrials,
+            expiredSubscriptions: expiredSubs,
+            totalRevenue,
+          },
+          user: req.session.adminUser,
+        });
+      }
+
       res.render('dashboard', {
         title: 'Executive Overview',
         totalUsers: usersList.users.length,
@@ -81,6 +134,9 @@ export class AdminController {
         user: req.session.adminUser,
       });
     } catch (e) {
+      if (isJsonRequest(req)) {
+        return res.status(500).json({ success: false, error: e.message });
+      }
       res.render('dashboard', {
         title: 'Executive Overview',
         totalUsers: 0,
@@ -160,6 +216,16 @@ export class AdminController {
         }
       }
 
+      if (isJsonRequest(req)) {
+        return res.json({
+          success: true,
+          institutes,
+          search,
+          user: req.session.adminUser,
+          connectionWarning,
+        });
+      }
+
       res.render('institutes', {
         title: 'Institute Directory & Management',
         institutes,
@@ -168,6 +234,9 @@ export class AdminController {
         connectionWarning,
       });
     } catch (e) {
+      if (isJsonRequest(req)) {
+        return res.status(500).json({ success: false, error: e.message, institutes: [] });
+      }
       res.render('institutes', {
         title: 'Institute Directory & Management',
         institutes: [],
@@ -207,6 +276,15 @@ export class AdminController {
         }
       }
 
+      if (isJsonRequest(req)) {
+        return res.json({
+          success: true,
+          subscriptions,
+          statusFilter,
+          user: req.session.adminUser,
+        });
+      }
+
       res.render('subscriptions', {
         title: 'Subscription Ledger',
         subscriptions,
@@ -214,6 +292,9 @@ export class AdminController {
         user: req.session.adminUser,
       });
     } catch (e) {
+      if (isJsonRequest(req)) {
+        return res.status(500).json({ success: false, error: e.message, subscriptions: [] });
+      }
       res.render('subscriptions', {
         title: 'Subscription Ledger',
         subscriptions: [],
@@ -247,12 +328,23 @@ export class AdminController {
         }
       }
 
+      if (isJsonRequest(req)) {
+        return res.json({
+          success: true,
+          logs,
+          user: req.session.adminUser,
+        });
+      }
+
       res.render('audit', {
         title: 'Security & Audit Logs',
         logs,
         user: req.session.adminUser,
       });
     } catch (e) {
+      if (isJsonRequest(req)) {
+        return res.status(500).json({ success: false, error: e.message, logs: [] });
+      }
       res.render('audit', {
         title: 'Security & Audit Logs',
         logs: [],
@@ -262,69 +354,24 @@ export class AdminController {
     }
   }
 
-  // Mutations with direct Firebase Admin SDK execution
+  // Authoritative mutations routed exclusively through Cloudflare Worker (REG-IMPL-01)
   static async grantTrial(req, res) {
     const { instituteId, durationDays, reason } = req.body;
     try {
-      try {
-        await workerClient.grantTrial(instituteId, Number(durationDays), reason, null);
-        return res.redirect('/institutes?success=Trial+granted+successfully');
-      } catch (workerErr) {
-        // Direct Firebase Admin SDK mutation
-        const db = getFirestore();
-        const days = Number(durationDays) || 7;
-        const startAt = new Date();
-        const endAt = new Date(startAt.getTime() + Math.round(days * 86400000));
-        const durationText = days < 1 ? `${Math.round(days * 24)} hour(s)` : `${days} day(s)`;
-        const licenseKey = `LIC-TRIAL-${instituteId.substring(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-        const adminUid = req.session?.adminUser?.uid || 'admin';
-
-        const batch = db.batch();
-        batch.set(db.doc(`subscription_trials/${instituteId}`), {
-          trialId: `trial_${Date.now()}`,
-          instituteId,
-          startAt: startAt.toISOString(),
-          endAt: endAt.toISOString(),
-          durationDays: days,
-          licenseKey,
-          grantedBy: adminUid,
-          reason: reason || `Admin granted ${durationText} trial`,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        batch.set(db.doc(`institutes/${instituteId}`), {
-          subscriptionStatus: 'trial',
-          trialUsed: true,
-          trialStartedAt: startAt.toISOString(),
-          trialEndsAt: endAt.toISOString(),
-          licenseKey,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        batch.set(db.doc(`institutes/${instituteId}/license/current`), {
-          licenseKey,
-          planId: 'smart199',
-          status: 'active',
-          isTrial: true,
-          activatedAt: startAt.toISOString(),
-          validUntil: endAt.toISOString(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        batch.set(db.doc(`subscription_audit_logs/log_${Date.now()}`), {
-          action: 'ADMIN_TRIAL_GRANTED',
-          instituteId,
-          performedBy: adminUid,
-          newValue: 'trial',
-          reason: reason || `Admin trial granted for ${days} days`,
-          timestamp: new Date().toISOString(),
-        });
-
-        await batch.commit();
-        return res.redirect('/institutes?success=Trial+granted+successfully');
+      if (!instituteId) {
+        throw new Error('Institute ID is required');
       }
+      await workerClient.grantTrial(instituteId, Number(durationDays), reason, null);
+      if (isJsonRequest(req)) {
+        return res.json({ success: true, message: 'Trial granted successfully' });
+      }
+      return res.redirect('/institutes?success=Trial+granted+successfully');
     } catch (e) {
-      res.redirect(`/institutes?error=${encodeURIComponent(e.message)}`);
+      console.error('[AdminController] grantTrial error:', e.message);
+      if (isJsonRequest(req)) {
+        return res.status(400).json({ success: false, error: 'Worker subscription API error: ' + e.message });
+      }
+      return res.redirect(`/institutes?error=${encodeURIComponent('Worker subscription API error: ' + e.message)}`);
     }
   }
 
@@ -334,166 +381,57 @@ export class AdminController {
       if (!instituteId) {
         throw new Error('Institute ID is required');
       }
-
-      const isLifetime = planTier === 'lifetime';
-      const actualPlanTier = isLifetime ? 'smart199' : (planTier || 'smart199');
-      const months = isLifetime ? 1200 : (Number(durationMonths) || 12);
-      const startAt = new Date();
-      const validUntil = isLifetime
-        ? new Date('2099-12-31T23:59:59.000Z')
-        : new Date(startAt.getTime() + months * 30 * 86400000);
-
-      const licenseKey = `LIC-${isLifetime ? 'LIFE' : actualPlanTier.toUpperCase()}-${instituteId.substring(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-      const adminUid = req.session?.adminUser?.uid || 'admin';
-
-      const db = getFirestore();
-      const batch = db.batch();
-
-      batch.set(db.doc(`institutes/${instituteId}`), {
-        subscriptionStatus: 'active',
-        plan: actualPlanTier,
-        planTier: actualPlanTier,
-        isLifetime,
-        isSubscribed: true,
-        licenseKey,
-        expiryDate: validUntil.toISOString(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-
-      batch.set(db.doc(`institutes/${instituteId}/license/current`), {
-        licenseKey,
-        planId: actualPlanTier,
-        status: 'active',
-        isTrial: false,
-        isLifetime,
-        activatedAt: startAt.toISOString(),
-        validUntil: validUntil.toISOString(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-
-      batch.set(db.doc(`subscriptions/${instituteId}`), {
-        instituteId,
-        planId: actualPlanTier,
-        planName: isLifetime ? 'Lifetime Access' : (actualPlanTier === 'core99' ? 'Core Plan (₹99)' : 'Smart Plan (₹199)'),
-        status: 'active',
-        licenseKey,
-        isLifetime,
-        amount: isLifetime ? 4999 : (actualPlanTier === 'core99' ? 99 * months : 199 * months),
-        startAt: startAt.toISOString(),
-        endAt: validUntil.toISOString(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-
-      batch.set(db.doc(`subscription_audit_logs/log_${Date.now()}`), {
-        action: 'ADMIN_PLAN_ACTIVATED',
-        instituteId,
-        planTier: actualPlanTier,
-        isLifetime,
-        performedBy: adminUid,
-        reason: reason || `Admin activated ${isLifetime ? 'Lifetime' : actualPlanTier} plan`,
-        timestamp: new Date().toISOString(),
-      });
-
-      await batch.commit();
+      await workerClient.activatePlan(instituteId, planTier, Number(durationMonths), reason, null);
+      if (isJsonRequest(req)) {
+        return res.json({ success: true, message: 'Plan activated and synchronized successfully' });
+      }
       return res.redirect('/institutes?success=Plan+activated+and+synchronized+successfully');
     } catch (e) {
-      res.redirect(`/institutes?error=${encodeURIComponent(e.message)}`);
+      console.error('[AdminController] activatePlan error:', e.message);
+      if (isJsonRequest(req)) {
+        return res.status(400).json({ success: false, error: 'Worker subscription API error: ' + e.message });
+      }
+      return res.redirect(`/institutes?error=${encodeURIComponent('Worker subscription API error: ' + e.message)}`);
     }
   }
 
   static async extendSubscription(req, res) {
     const { subscriptionId, days, reason } = req.body;
     try {
-      try {
-        await workerClient.extendSubscription(subscriptionId, Number(days), reason, null);
-        return res.redirect('/subscriptions?success=Subscription+extended+successfully');
-      } catch (workerErr) {
-        const db = getFirestore();
-        const subDoc = await db.doc(`subscriptions/${subscriptionId}`).get();
-        if (!subDoc.exists) {
-          throw new Error(`Subscription ${subscriptionId} not found`);
-        }
-        const sub = subDoc.data();
-        const numDays = Number(days) || 30;
-        const now = new Date();
-        const currentEnd = sub.endAt ? new Date(sub.endAt) : now;
-        const baseDate = currentEnd.getTime() > now.getTime() ? currentEnd : now;
-        const newEnd = new Date(baseDate.getTime() + numDays * 86400000);
-        const adminUid = req.session?.adminUser?.uid || 'admin';
-
-        const batch = db.batch();
-        batch.set(db.doc(`subscriptions/${subscriptionId}`), {
-          endAt: newEnd.toISOString(),
-          status: 'active',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        if (sub.instituteId) {
-          batch.set(db.doc(`institutes/${sub.instituteId}`), {
-            subscriptionStatus: 'active',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
-
-          batch.set(db.doc(`institutes/${sub.instituteId}/license/current`), {
-            status: 'active',
-            validUntil: newEnd.toISOString(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
-        }
-
-        batch.set(db.doc(`subscription_audit_logs/log_${Date.now()}`), {
-          action: 'ADMIN_SUBSCRIPTION_EXTENDED',
-          subscriptionId,
-          instituteId: sub.instituteId || 'unknown',
-          performedBy: adminUid,
-          oldValue: sub.endAt || 'none',
-          newValue: newEnd.toISOString(),
-          reason: reason || `Extended by ${numDays} days`,
-          timestamp: new Date().toISOString(),
-        });
-
-        await batch.commit();
-        return res.redirect('/subscriptions?success=Subscription+extended+successfully');
+      if (!subscriptionId) {
+        throw new Error('Subscription ID is required');
       }
+      await workerClient.extendSubscription(subscriptionId, Number(days), reason, null);
+      if (isJsonRequest(req)) {
+        return res.json({ success: true, message: 'Subscription extended successfully' });
+      }
+      return res.redirect('/subscriptions?success=Subscription+extended+successfully');
     } catch (e) {
-      res.redirect(`/subscriptions?error=${encodeURIComponent(e.message)}`);
+      console.error('[AdminController] extendSubscription error:', e.message);
+      if (isJsonRequest(req)) {
+        return res.status(400).json({ success: false, error: 'Worker subscription API error: ' + e.message });
+      }
+      return res.redirect(`/subscriptions?error=${encodeURIComponent('Worker subscription API error: ' + e.message)}`);
     }
   }
 
   static async revokeSubscription(req, res) {
     const { instituteId, reason } = req.body;
     try {
-      try {
-        await workerClient.revokeSubscription(instituteId, reason, null);
-        return res.redirect('/institutes?success=Subscription+revoked+successfully');
-      } catch (workerErr) {
-        const db = getFirestore();
-        const adminUid = req.session?.adminUser?.uid || 'admin';
-
-        const batch = db.batch();
-        batch.set(db.doc(`institutes/${instituteId}`), {
-          subscriptionStatus: 'revoked',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        batch.set(db.doc(`institutes/${instituteId}/license/current`), {
-          status: 'revoked',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        batch.set(db.doc(`subscription_audit_logs/log_${Date.now()}`), {
-          action: 'ADMIN_SUBSCRIPTION_REVOKED',
-          instituteId,
-          performedBy: adminUid,
-          reason: reason || 'Revoked by administrator',
-          timestamp: new Date().toISOString(),
-        });
-
-        await batch.commit();
-        return res.redirect('/institutes?success=Subscription+revoked+successfully');
+      if (!instituteId) {
+        throw new Error('Institute ID is required');
       }
+      await workerClient.revokeSubscription(instituteId, reason, null);
+      if (isJsonRequest(req)) {
+        return res.json({ success: true, message: 'Subscription revoked successfully' });
+      }
+      return res.redirect('/institutes?success=Subscription+revoked+successfully');
     } catch (e) {
-      res.redirect(`/institutes?error=${encodeURIComponent(e.message)}`);
+      console.error('[AdminController] revokeSubscription error:', e.message);
+      if (isJsonRequest(req)) {
+        return res.status(400).json({ success: false, error: 'Worker subscription API error: ' + e.message });
+      }
+      return res.redirect(`/institutes?error=${encodeURIComponent('Worker subscription API error: ' + e.message)}`);
     }
   }
 
@@ -547,6 +485,14 @@ export class AdminController {
         }
       }
 
+      if (isJsonRequest(req)) {
+        return res.json({
+          success: true,
+          plans,
+          user: req.session.adminUser,
+        });
+      }
+
       return res.render('plans', {
         title: 'Subscription Plans Management',
         plans,
@@ -556,6 +502,9 @@ export class AdminController {
         error: req.query.error,
       });
     } catch (e) {
+      if (isJsonRequest(req)) {
+        return res.status(500).json({ success: false, error: e.message, plans: [] });
+      }
       return res.render('plans', {
         title: 'Subscription Plans Management',
         plans: [],
@@ -579,9 +528,15 @@ export class AdminController {
       const pSmartAnnual = Number(smartAnnualPrice);
 
       if (isNaN(pCore) || pCore < 1) {
+        if (isJsonRequest(req)) {
+          return res.status(400).json({ success: false, error: 'Core plan monthly price must be at least Rs 1' });
+        }
         return res.redirect('/plans?error=Core+plan+monthly+price+must+be+at+least+Rs+1');
       }
       if (isNaN(pSmart) || pSmart < 1) {
+        if (isJsonRequest(req)) {
+          return res.status(400).json({ success: false, error: 'Smart plan monthly price must be at least Rs 1' });
+        }
         return res.redirect('/plans?error=Smart+plan+monthly+price+must+be+at+least+Rs+1');
       }
 
@@ -620,27 +575,21 @@ export class AdminController {
 
       try {
         await workerClient.updatePlans(updatedPlans);
+        if (isJsonRequest(req)) {
+          return res.json({ success: true, message: 'Plans updated successfully' });
+        }
         return res.redirect('/plans?success=Plans+updated+successfully!+New+prices+are+now+live+in+Flutter+and+Razorpay.');
       } catch (workerErr) {
-        if (hasDirectFirestoreAccess()) {
-          const db = getFirestore();
-          const adminUid = req.session?.adminUser?.uid || 'admin';
-          await db.doc('system_config/plans').set({
-            plans: updatedPlans,
-            updatedAt: new Date().toISOString(),
-            updatedBy: adminUid,
-          });
-          await db.collection('subscription_audit_logs').add({
-            action: 'PLANS_UPDATED',
-            adminUid,
-            plans: updatedPlans,
-            timestamp: new Date().toISOString(),
-          });
-          return res.redirect('/plans?success=Plans+updated+successfully!+New+prices+are+now+live+in+Flutter+and+Razorpay.');
+        console.error('[AdminController] updatePlans error:', workerErr.message);
+        if (isJsonRequest(req)) {
+          return res.status(400).json({ success: false, error: 'Worker subscription API error: ' + workerErr.message });
         }
-        throw workerErr;
+        return res.redirect(`/plans?error=${encodeURIComponent('Worker subscription API error: ' + workerErr.message)}`);
       }
     } catch (e) {
+      if (isJsonRequest(req)) {
+        return res.status(400).json({ success: false, error: e.message });
+      }
       return res.redirect(`/plans?error=${encodeURIComponent(e.message)}`);
     }
   }
